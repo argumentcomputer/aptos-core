@@ -34,7 +34,7 @@ use aptos_types::{
     mempool_status::MempoolStatusCode,
     transaction::{
         EntryFunction, ExecutionStatus, MultisigTransactionPayload, RawTransaction,
-        RawTransactionWithData, SignedTransaction, TransactionPayload,
+        RawTransactionWithData, SignedTransaction, TransactionPayload, TransactionStatus,
     },
     vm_status::StatusCode,
     APTOS_COIN_TYPE,

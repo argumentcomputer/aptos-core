@@ -13,23 +13,24 @@ jobs:
 
     steps:
       - name: Checkout code
-        uses: actions/checkout@v2
+        uses: actions/checkout@v4
         with:
           fetch-depth: 0 # Fetch all history so we can perform a rebase
 
       - name: Fetch latest tag
-        id: latesttag
+        id: latest-tag
         run: |
           LATEST_TAG=$(curl --silent "https://api.github.com/repos/aptos-labs/aptos-core/tags" | jq -r '.[].name' | grep '^aptos-node-v' | sort -V | tail -n 1)
-          echo "::set-output name=tag::${LATEST_TAG}"
+          echo "name=tag::${LATEST_TAG}" | tee -a $GITHUB_OUTPUT
 
       - name: Compare and rebase
         id: rebase
+        continue-on-error: true
         run: |
           CURRENT_TAG=$(git describe --tags `git rev-list --tags --max-count=1`)
           git checkout ${{ matrix.branch }}
           git checkout -b rebase-branch-${{ matrix.branch }}
-          if ! git rebase --onto ${{ steps.latesttag.outputs.tag }} $CURRENT_TAG; then
+          if ! git rebase --onto ${{ steps.latest-tag.outputs.tag }} $CURRENT_TAG; then
             echo "Rebase conflicts detected on branch ${{ matrix.branch }}. Please resolve them manually."
             exit 1
           fi
@@ -37,14 +38,18 @@ jobs:
 
       - name: Create Issue
         if: ${{ failure() && steps.rebase.outcome == 'failure' }}
-        uses: actions/github-script@v5
+        uses: JasonEtco/create-an-issue@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          BRANCH: ${{ matrix.branch }}
+          TAG: ${{ steps.latest-tag.outputs.tag }}
         with:
           script: |
             const issue = {
               owner: context.repo.owner,
               repo: context.repo.repo,
               title: `Rebase conflicts detected on branch ${{ matrix.branch }}`,
-              body: `Rebase conflicts detected when trying to rebase branch ${{ matrix.branch }} onto tag ${{ steps.latesttag.outputs.tag }}. Please resolve them manually.`
+              body: `Rebase conflicts detected when trying to rebase branch ${{ matrix.branch }} onto tag ${{ steps.latest-tag.outputs.tag }}. Please resolve them manually.`
             }
             github.rest.issues.create(issue)
 
@@ -52,6 +57,6 @@ jobs:
         if: ${{ success() }}
         uses: peter-evans/create-pull-request@v3
         with:
-          title: 'Rebase on new tag ${{ steps.latesttag.outputs.tag }}'
+          title: 'Rebase on new tag ${{ steps.latest-tag.outputs.tag }}'
           branch: 'rebase-branch-${{ matrix.branch }}'
           base: '${{ matrix.branch }}'

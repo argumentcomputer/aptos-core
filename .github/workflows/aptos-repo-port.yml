@@ -20,8 +20,14 @@ jobs:
       - name: Fetch latest tag
         id: latest-tag
         run: |
-          LATEST_TAG=$(curl --silent "https://api.github.com/repos/aptos-labs/aptos-core/tags" | jq -r '.[].name' | grep '^aptos-node-v' | sort -V | tail -n 1)
-          echo "name=tag::${LATEST_TAG}" | tee -a $GITHUB_OUTPUT
+          LATEST_TAG=$(curl --silent "https://api.github.com/repos/aptos-labs/aptos-core/releases" | jq -r '.[] | select(.name | ascii_downcase | contains("mainnet")) | .tag_name' | grep '^aptos-node-v' | sort -V | tail -n 1)
+          CURRENT_TAG=$(git describe --tags `git rev-list --tags --max-count=1`)
+          if [[ $(echo -e "$CURRENT_TAG\n$LATEST_TAG" | sort -V | tail -n 1) != $CURRENT_TAG ]]; then
+            echo "name=tag::${LATEST_TAG}" | tee -a $GITHUB_OUTPUT
+          else
+            echo "The current tag is up to date."
+            exit 0
+          fi
 
       - name: Compare and rebase
         id: rebase
@@ -43,15 +49,6 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           BRANCH: ${{ matrix.branch }}
           TAG: ${{ steps.latest-tag.outputs.tag }}
-        with:
-          script: |
-            const issue = {
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              title: `Rebase conflicts detected on branch ${{ matrix.branch }}`,
-              body: `Rebase conflicts detected when trying to rebase branch ${{ matrix.branch }} onto tag ${{ steps.latest-tag.outputs.tag }}. Please resolve them manually.`
-            }
-            github.rest.issues.create(issue)
 
       - name: Create Pull Request
         if: ${{ success() }}

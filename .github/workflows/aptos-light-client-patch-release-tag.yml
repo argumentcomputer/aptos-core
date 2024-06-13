@@ -1,0 +1,26 @@
+name: Aptos LC - Create Patched Release Branch
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Release tag patched'
+        required: true
+
+jobs:
+  create-branch:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v2
+        with:
+          fetch-depth: 0 # Fetch all history so we can perform a rebase
+          ref: "dev"
+
+      - name: Create and push branch
+        uses: peterjgrainger/action-create-branch@v2.2.0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          branch: 'refs/heads/release/${{ github.event.inputs.tag }}-patched'

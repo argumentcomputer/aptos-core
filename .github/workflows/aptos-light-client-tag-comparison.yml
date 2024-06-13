@@ -1,4 +1,4 @@
-name: Check for new tags and create PR
+name: Aptos LC - Check for new tags and create issue
 
 on:
   schedule:
@@ -7,15 +7,20 @@ on:
 jobs:
   check-tags:
     runs-on: ubuntu-latest
-    strategy:
-      matrix:
-        branch: [ 'dev', 'release/aptos-light-client' ]
 
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
         with:
           fetch-depth: 0 # Fetch all history so we can perform a rebase
+          ref: "dev"
+
+      - name: Check branch name
+        run: |
+          if [[ "${GITHUB_REF#refs/heads/}" != "dev" ]]; then
+            echo "Workflow run cancelled because it's not on 'dev' branch."
+            exit 1
+          fi
 
       - name: Fetch latest tag
         id: latest-tag
@@ -29,31 +34,9 @@ jobs:
             exit 0
           fi
 
-      - name: Compare and rebase
-        id: rebase
-        continue-on-error: true
-        run: |
-          CURRENT_TAG=$(git describe --tags `git rev-list --tags --max-count=1`)
-          git checkout ${{ matrix.branch }}
-          git checkout -b rebase-branch-${{ matrix.branch }}
-          if ! git rebase --onto ${{ steps.latest-tag.outputs.tag }} $CURRENT_TAG; then
-            echo "Rebase conflicts detected on branch ${{ matrix.branch }}. Please resolve them manually."
-            exit 1
-          fi
-          git push origin rebase-branch-${{ matrix.branch }}
-
       - name: Create Issue
-        if: ${{ failure() && steps.rebase.outcome == 'failure' }}
         uses: JasonEtco/create-an-issue@v2
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          BRANCH: ${{ matrix.branch }}
+          BRANCH: "dev"
           TAG: ${{ steps.latest-tag.outputs.tag }}
-
-      - name: Create Pull Request
-        if: ${{ success() }}
-        uses: peter-evans/create-pull-request@v3
-        with:
-          title: 'Rebase on new tag ${{ steps.latest-tag.outputs.tag }}'
-          branch: 'rebase-branch-${{ matrix.branch }}'
-          base: '${{ matrix.branch }}'

@@ -1,0 +1,86 @@
+name: Aptos LC - Create Patched Release PR
+
+on:
+  workflow_dispatch:
+    inputs:
+      type:
+        description: 'release or hotfix'
+        type: choice
+        options:
+          - release
+          - hotfix
+        required: true
+      # Tag version to patch, e.g. `aptos-node-v1.13.3`
+      version:
+        description: 'Release tag patched'
+        required: true
+
+jobs:
+  release-pr:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Git config
+        run: |
+          git config --global user.name "github-actions[bot]"
+          git config --global user.email "github-actions[bot]@users.noreply.github.com"
+
+          git config --global url."https://${{ secrets.REPO_TOKEN }}@github.com/".insteadOf ssh://git@github.com
+          git config --global url."https://${{ secrets.REPO_TOKEN }}@github.com".insteadOf https://github.com
+
+      - uses: actions/checkout@v4
+
+      - name: Set base branch
+        run: |
+          if [[ "${{ inputs.type == 'hotfix' }}" == "true" ]]; then
+            BASE_BRANCH="release/${{ inputs.version }}-patched"
+          else
+            BASE_BRANCH="main"
+          fi
+          echo "BASE_BRANCH=$BASE_BRANCH" | tee -a $GITHUB_ENV
+          echo "PR_BRANCH=${{ inputs.type }}/${{ inputs.version }}-patched" | tee -a $GITHUB_ENV
+          echo "PR_DESCRIPTION=chore: Release ${{ inputs.version }}-patched" | tee -a $GITHUB_ENV
+
+      # TODO: Need some change for the PR to be possible, so recording the version change in `PATCH_RELEASE.md` since we're not using `Cargo.toml`
+      - name: Edit tag version in PATCH_RELEASE.md
+        run: |
+          git fetch origin
+          # NOTE: Release branch must not exist already. If it does, use the `hotfix` input type to change it as any `release/*` branch is load-bearing
+          if [[ "${{ inputs.type }}" == "release" ]]; then
+            git checkout -b ${{ env.PR_BRANCH }}
+          else
+            git checkout ${{ env.PR_BRANCH }}
+          fi
+
+          if [[ ! -s "PATCH_RELEASE.md" ]]; then
+            counter=1
+          else
+            counter=$(awk '{print $NF}' "$PATCH_RELEASE.md")
+            if [[ "$counter" =~ ^[0-9]+$ ]]; then
+              # Increment the variable
+              ((counter++))
+            else
+              counter=1
+            fi
+          fi
+          echo "Version ${{ inputs.version }} - release $counter" | tee PATCH_RELEASE.md
+          git add .
+          git commit -m "${{ env.PR_DESCRIPTION }}"
+          git push origin ${{ env.PR_BRANCH }}
+
+      # Note: Can't use `peter-evans/create-pull-request` because for hotfixes we need to make the PR with an existing branch
+      # The above action always creates a new one for single-commit PRs, thus overwriting the actual hotfix
+      - name: Create PR
+        run: |
+          cat << 'EOF' > body.md
+          This is an automated release PR for the patched version of `${{ inputs.version }}`.
+
+          Upstream changelog: https://github.com/aptos-labs/aptos-core/releases/tag/${{ inputs.version }}
+
+          On merge, this will trigger the [release publish workflow](${{ github.server_url }}/${{ github.repository }}/actions/workflows/aptos-light-client-patch-release-publish.yml), which will upload a new GitHub release with tag `{{ inputs.version }}-patched`.
+
+          [Workflow run](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }})
+          EOF
+
+          gh pr create --title "${{ env.PR_DESCRIPTION }}" --body-file ./body.md --head ${{ env.PR_BRANCH }} --base ${{ env.BASE_BRANCH }}
+        env:
+          GH_TOKEN: ${{ github.token }}

@@ -15,7 +15,7 @@ jobs:
         id: latest-tag
         run: |
           LATEST_TAG=$(curl --silent "https://api.github.com/repos/aptos-labs/aptos-core/releases" | jq -r '.[] | select(.name | ascii_downcase | contains("mainnet")) | .tag_name' | grep '^aptos-node-v' | sort -V | tail -n 1)
-          CURRENT_TAG=$(curl --silent "https://api.github.com/repos/samuelburnham/aptos-core/releases" | jq -r '.[] | .tag_name' | grep '^aptos-node-v' | sort -V | tail -n 1)
+          CURRENT_TAG=$(curl --silent "https://api.github.com/repos/${{ github.repository }}/releases" | jq -r '.[] | .tag_name' | grep '^aptos-node-v' | sort -V | tail -n 1)
           LATEST_VERSION=$(echo $LATEST_TAG | awk -F'-' '{ print $3 }')
           CURRENT_VERSION=$(echo $CURRENT_TAG | awk -F'-' '{ print $3 }')
           # Check if there are any tags

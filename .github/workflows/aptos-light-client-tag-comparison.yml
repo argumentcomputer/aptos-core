@@ -7,36 +7,36 @@ on:
 jobs:
   check-tags:
     runs-on: ubuntu-latest
-
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
-        with:
-          fetch-depth: 0 # Fetch all history so we can perform a rebase
-          ref: "dev"
-
-      - name: Check branch name
-        run: |
-          if [[ "${GITHUB_REF#refs/heads/}" != "dev" ]]; then
-            echo "Workflow run cancelled because it's not on 'dev' branch."
-            exit 1
-          fi
 
       - name: Fetch latest tag
         id: latest-tag
         run: |
           LATEST_TAG=$(curl --silent "https://api.github.com/repos/aptos-labs/aptos-core/releases" | jq -r '.[] | select(.name | ascii_downcase | contains("mainnet")) | .tag_name' | grep '^aptos-node-v' | sort -V | tail -n 1)
-          CURRENT_TAG=$(git describe --tags `git rev-list --tags --max-count=1`)
-          if [[ $(echo -e "$CURRENT_TAG\n$LATEST_TAG" | sort -V | tail -n 1) != $CURRENT_TAG ]]; then
-            echo "name=tag::${LATEST_TAG}" | tee -a $GITHUB_OUTPUT
-          else
+          CURRENT_TAG=$(curl --silent "https://api.github.com/repos/${{ github.repository }}/releases" | jq -r '.[] | .tag_name' | grep '^aptos-node-v' | sort -V | tail -n 1)
+          LATEST_VERSION=$(echo $LATEST_TAG | awk -F'-' '{ print $3 }')
+          CURRENT_VERSION=$(echo $CURRENT_TAG | awk -F'-' '{ print $3 }')
+          # Check if there are any tags
+          if [[ $(echo -e "$CURRENT_VERSION\n$LATEST_VERSION" | sort -V | tail -n 1) == $CURRENT_TAG ]]; then
             echo "The current tag is up to date."
             exit 0
           fi
+          # If the current tag is not up to date, proceed to open an issue
+          echo "Current tag $CURRENT_TAG is out of date with upstream tag $LATEST_TAG, opening an issue"
+          echo "tag=${LATEST_TAG}" | tee -a $GITHUB_OUTPUT
 
-      - name: Create Issue
+      - name: Create issue for release
         uses: JasonEtco/create-an-issue@v2
+        with:
+          filename: .github/ISSUE_TEMPLATE/tag_release.md
+          update_existing: true
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          BRANCH: "dev"
-          TAG: ${{ steps.latest-tag.outputs.tag }}
+          GITHUB_TOKEN: ${{ secrets.REPO_TOKEN }}
+          RELEASE_TAG: ${{ steps.latest-tag.outputs.tag }}
+          UPSTREAM_URL: https://github.com/aptos-labs/aptos-core/releases/tag/${{ steps.latest-tag.outputs.tag }}
+          RELEASE_PR_WORKFLOW: ${{ github.server_url }}/${{ github.repository }}/actions/workflows/aptos-light-client-patch-release-pr.yml
+          RELEASE_MERGE_WORKFLOW: ${{ github.server_url }}/${{ github.repository }}/actions/workflows/aptos-light-client-patch-release-publish.yml
+          WORKFLOW_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+
